@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Check, Menu, Minus, Plus, X } from "lucide-react";
-import { siteContent as content } from "./content";
-import heroBust from "./assets/hero-bust.webp";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, Menu, Minus, Plus, X } from "lucide-react";
+import {
+  DEFAULT_LOCALE,
+  FORM_OPTIONS,
+  getSiteContent,
+  normaliseLocale,
+} from "./content";
 import studioPortrait from "./assets/studio-portrait.webp";
 import dolceTorte from "./assets/projects/dolce-torte.webp";
 import atasol from "./assets/projects/atasol.webp";
 import produktAuto from "./assets/projects/produkt-auto.webp";
 import tinaSport from "./assets/projects/tina-sport.webp";
 import doganSeptem from "./assets/projects/dogan-septem.webp";
+
+export const INQUIRY_EMAIL = "mvukusic67@gmail.com";
+const LOCALE_STORAGE_KEY = "osiris-locale";
 
 const projectImages = {
   dolceTorte,
@@ -17,15 +24,139 @@ const projectImages = {
   doganSeptem,
 };
 
+const initialForm = {
+  name: "",
+  email: "",
+  company: "",
+  service: "",
+  budget: "",
+  timeline: "",
+  brief: "",
+};
+
+const requiredFields = ["name", "email", "service", "timeline", "brief"];
+const LocaleContext = createContext(null);
+
+export function readStoredLocale() {
+  if (typeof window === "undefined") return DEFAULT_LOCALE;
+
+  try {
+    return normaliseLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY));
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
+
+function LocaleProvider({ children }) {
+  const [locale, setLocale] = useState(readStoredLocale);
+  const content = useMemo(() => getSiteContent(locale), [locale]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = content.meta.title;
+    let description = document.querySelector('meta[name="description"]');
+    if (!description) {
+      description = document.createElement("meta");
+      description.setAttribute("name", "description");
+      document.head.append(description);
+    }
+    description.setAttribute("content", content.meta.description);
+
+    try {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {
+      // A blocked storage API must not block language selection.
+    }
+  }, [content.meta.description, content.meta.title, locale]);
+
+  const value = useMemo(
+    () => ({
+      locale,
+      content,
+      setLocale: (nextLocale) => setLocale(normaliseLocale(nextLocale)),
+    }),
+    [content, locale],
+  );
+
+  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
+}
+
+function useLocale() {
+  const context = useContext(LocaleContext);
+  if (!context) throw new Error("useLocale must be used inside LocaleProvider");
+  return context;
+}
+
+function optionLabel(content, group, value) {
+  if (!value) return "—";
+  return content.contact.form.options[group][value] || value;
+}
+
+export function buildMailtoUri(form, content) {
+  const labels = content.contact.form.labels;
+  const subjectPrefix = content.locale === "hr" ? "OSIRIS — projektni upit" : "OSIRIS — project inquiry";
+  const sender = form.company.trim() || form.name.trim();
+  const subject = `${subjectPrefix} — ${sender}`;
+  const body = [
+    `${labels.name}: ${form.name.trim()}`,
+    `${labels.email}: ${form.email.trim()}`,
+    `${labels.company}: ${form.company.trim() || "—"}`,
+    `${labels.service}: ${optionLabel(content, "services", form.service)}`,
+    `${labels.budget}: ${optionLabel(content, "budgets", form.budget)}`,
+    `${labels.timeline}: ${optionLabel(content, "timelines", form.timeline)}`,
+    "",
+    `${labels.brief}:`,
+    form.brief.trim(),
+  ].join("\n");
+
+  return `mailto:${INQUIRY_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function launchMailto(uri) {
+  const anchor = document.createElement("a");
+  anchor.href = uri;
+  anchor.setAttribute("data-mailto-launch", "true");
+  anchor.click();
+}
+
 function Wordmark() {
+  const { content } = useLocale();
+
   return (
     <span className="wordmark" aria-label={content.brand.name}>
-      OSIRIS<span aria-hidden="true">.</span>
+      <span aria-hidden="true">OSIRIS</span>
+      <span className="wordmark__signal" aria-hidden="true" />
     </span>
   );
 }
 
+function LocaleSwitcher() {
+  const { locale, setLocale, content } = useLocale();
+
+  return (
+    <div className="locale-switcher" role="group" aria-label={content.a11y.language}>
+      <button
+        type="button"
+        aria-label={content.a11y.croatian}
+        aria-pressed={locale === "hr"}
+        onClick={() => setLocale("hr")}
+      >
+        HR
+      </button>
+      <button
+        type="button"
+        aria-label={content.a11y.english}
+        aria-pressed={locale === "en"}
+        onClick={() => setLocale("en")}
+      >
+        EN
+      </button>
+    </div>
+  );
+}
+
 function Header() {
+  const { content } = useLocale();
   const dialogRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -36,6 +167,7 @@ function Header() {
     if (menuOpen && !dialog.open) {
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
+      queueMicrotask(() => dialog.querySelector(".menu-dialog__nav a")?.focus());
     }
 
     if (!menuOpen && dialog.open) {
@@ -48,31 +180,49 @@ function Header() {
 
   return (
     <>
-      <header className="site-header shell">
-        <a className="brand-link" href="#top" aria-label="OSIRIS home">
-          <Wordmark />
-        </a>
-        <div className="header-actions">
-          <a className="header-cta" href="#contact">
-            Let’s talk <ArrowDownRight size={16} aria-hidden="true" />
+      <header className="nav-mast">
+        <div className="mast-line shell">
+          <p>{content.brand.descriptor}</p>
+          <LocaleSwitcher />
+          <p className="mast-line__edition">{content.brand.edition}</p>
+        </div>
+        <div className="mast-brand shell">
+          <a href="#top" aria-label={content.a11y.home}>
+            <Wordmark />
+          </a>
+        </div>
+        <div className="mast-nav-row shell">
+          <nav className="mast-nav" aria-label={content.a11y.primaryNavigation}>
+            <ul>
+              {content.navigation.map((item) => (
+                <li key={item.href}>
+                  <a href={item.href}>{item.label}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <a className="mast-cta" href="#contact">
+            {content.brand.contactLabel}
+            <ArrowDownRight size={17} aria-hidden="true" />
           </a>
           <button
-            className="icon-button menu-button"
+            className="menu-trigger"
             type="button"
-            aria-label="Open navigation"
+            aria-label={content.a11y.openNavigation}
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(true)}
           >
-            <Menu size={18} aria-hidden="true" />
+            <Menu size={20} aria-hidden="true" />
           </button>
         </div>
+        <div className="mast-rule shell" aria-hidden="true" />
       </header>
 
       <dialog
         ref={dialogRef}
         className="menu-dialog"
-        aria-label="Site navigation"
+        aria-label={content.a11y.navigationDialog}
         onClose={() => setMenuOpen(false)}
         onClick={(event) => {
           if (event.target === event.currentTarget) closeMenu();
@@ -81,16 +231,16 @@ function Header() {
         <div className="menu-dialog__panel">
           <div className="menu-dialog__top">
             <Wordmark />
-            <button className="icon-button" type="button" aria-label="Close navigation" onClick={closeMenu}>
-              <X size={18} aria-hidden="true" />
+            <button type="button" aria-label={content.a11y.closeNavigation} onClick={closeMenu}>
+              <X size={21} aria-hidden="true" />
             </button>
           </div>
-          <nav aria-label="Primary navigation">
+          <nav className="menu-dialog__nav" aria-label={content.a11y.primaryNavigation}>
             {content.navigation.map((item, index) => (
               <a href={item.href} onClick={closeMenu} key={item.href}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                {item.label}
-                <ArrowUpRight size={20} aria-hidden="true" />
+                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                <strong>{item.label}</strong>
+                <ArrowUpRight size={22} aria-hidden="true" />
               </a>
             ))}
           </nav>
@@ -100,153 +250,41 @@ function Header() {
   );
 }
 
-function OrbitBadge({ label, href, className = "" }) {
+function SectionHeading({ id, title, intro }) {
   return (
-    <a className={`orbit-badge ${className}`.trim()} href={href} aria-label={label}>
-      <span>{label}</span>
-      <ArrowDownRight size={14} aria-hidden="true" />
-    </a>
+    <header className="section-heading">
+      <h2 id={id}>{title}</h2>
+      <p>{intro}</p>
+    </header>
   );
 }
 
 function Hero() {
-  return (
-    <section className="hero shell" id="top" aria-labelledby="hero-title">
-      <div className="hero__rings" aria-hidden="true" />
-      <div className="hero__copy">
-        <p className="availability hero-reveal" style={{ "--i": 0 }}>
-          <span aria-hidden="true" />
-          {content.brand.availability}
-        </p>
-        <h1 id="hero-title" className="hero__title hero-reveal" style={{ "--i": 1 }}>
-          <span>{content.hero.title[0]}</span>
-          <span className="hero__title-outline">{content.hero.title[1]}</span>
-        </h1>
-        <p className="hero__description hero-reveal" style={{ "--i": 2 }}>
-          {content.hero.description}
-        </p>
-      </div>
-      <figure className="hero__figure hero-reveal" style={{ "--i": 3 }}>
-        <img
-          src={heroBust}
-          width="1024"
-          height="1536"
-          alt="Monochrome sculptural bust representing OSIRIS creative direction"
-          fetchPriority="high"
-        />
-      </figure>
-      <OrbitBadge label="See work" href="#work" className="hero__orbit" />
-    </section>
-  );
-}
-
-function StudioIntro() {
-  return (
-    <section className="studio shell" id="studio" aria-labelledby="studio-title">
-      <div className="studio__statement">
-        <p>{content.hero.lead}</p>
-        <h2 id="studio-title">{content.introduction.title}</h2>
-        <p>{content.introduction.copy}</p>
-      </div>
-      <div className="studio__portrait-wrap">
-        <figure className="studio__portrait">
-          <img
-            src={studioPortrait}
-            width="1024"
-            height="1536"
-            alt="Monochrome studio portrait of the OSIRIS portfolio owner"
-            loading="lazy"
-          />
-        </figure>
-        <p className="studio__note">{content.introduction.note}</p>
-        <OrbitBadge label="Our approach" href="#services" className="studio__orbit" />
-      </div>
-      <div className="discipline-strip" aria-label="Studio structure">
-        {content.disciplines.map((item) => (
-          <article key={item.label}>
-            <span>{item.value}</span>
-            <h3>{item.label}</h3>
-            <p>{item.detail}</p>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Accordion({ items, openId, onToggle, variant = "default" }) {
-  return (
-    <div className={`accordion accordion--${variant}`}>
-      {items.map((item, index) => {
-        const isOpen = item.id === openId;
-        const panelId = `${variant}-${item.id}-panel`;
-        const buttonId = `${variant}-${item.id}-button`;
-        return (
-          <article className={`accordion__item${isOpen ? " is-open" : ""}`} key={item.id}>
-            <h3>
-              <button
-                id={buttonId}
-                type="button"
-                aria-expanded={isOpen}
-                aria-controls={panelId}
-                onClick={() => onToggle(isOpen ? null : item.id)}
-              >
-                <span className="accordion__index">{String(index + 1).padStart(2, "0")}</span>
-                <span className="accordion__label">{item.title || item.question}</span>
-                <span className="accordion__icon" aria-hidden="true">
-                  {isOpen ? <Minus size={17} /> : <Plus size={17} />}
-                </span>
-              </button>
-            </h3>
-            <div
-              className="accordion__panel"
-              id={panelId}
-              role="region"
-              aria-labelledby={buttonId}
-              aria-hidden={!isOpen}
-              inert={!isOpen ? true : undefined}
-            >
-              <div className="accordion__content">
-                <p>{item.summary || item.answer}</p>
-                {item.deliverables && (
-                  <ul>
-                    {item.deliverables.map((deliverable) => (
-                      <li key={deliverable}>{deliverable}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-function Services() {
-  const [openService, setOpenService] = useState(content.services[0].id);
+  const { content } = useLocale();
 
   return (
-    <section className="services shell section-gap" id="services" aria-labelledby="services-title">
-      <div className="section-heading">
-        <h2 id="services-title">What we do</h2>
-        <p>Three connected disciplines, shaped around the problem rather than a package.</p>
+    <section className="manifesto-hero shell" id="top" aria-labelledby="hero-title">
+      <h1 id="hero-title" className="manifesto-hero__title hero-reveal">
+        <span>{content.hero.title[0]}</span>
+        {" "}
+        <span>{content.hero.title[1]}</span>
+      </h1>
+      <div className="manifesto-hero__footer hero-reveal">
+        <p>{content.hero.description}</p>
+        <span>{content.hero.note}</span>
       </div>
-      <Accordion items={content.services} openId={openService} onToggle={setOpenService} variant="services" />
     </section>
   );
 }
 
 function SelectedWork() {
+  const { content } = useLocale();
+
   return (
-    <section className="work-wrap" id="work" aria-labelledby="work-title">
-      <div className="work shell">
-        <header className="work__header">
-          <h2 id="work-title">Our selected work</h2>
-          <p>Five live websites designed and built across food, wellness, automotive, sport, and interiors.</p>
-        </header>
-        <div className="project-list">
+    <section className="work-section" id="work" aria-labelledby="work-title">
+      <div className="shell">
+        <SectionHeading id="work-title" title={content.work.title} intro={content.work.intro} />
+        <div className="project-grid">
           {content.projects.map((project, index) => (
             <article className={`project project--${index + 1}`} key={project.id}>
               <a
@@ -254,35 +292,31 @@ function SelectedWork() {
                 href={project.url}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={`Visit ${project.title} website`}
+                aria-label={content.a11y.visitProject(project.title)}
               >
                 <figure className="project__figure">
                   <img
                     src={projectImages[project.image]}
                     width="1440"
                     height="1000"
-                    alt={`${project.title} website homepage`}
+                    alt={content.a11y.projectImage(project.title)}
                     loading="lazy"
                   />
                   <span className="project__visit">
-                    Live site
+                    {content.work.liveSite}
                     <ArrowUpRight size={16} aria-hidden="true" />
                   </span>
                 </figure>
                 <div className="project__copy">
                   <div className="project__meta">
-                    <span className="project__number" aria-hidden="true">
-                      {project.number}
-                    </span>
-                    <p>{project.category}</p>
+                    <span>{project.number}</span>
+                    <span>{project.category}</span>
                   </div>
                   <h3>{project.title}</h3>
                   <p>{project.description}</p>
                   <div className="project__foot">
-                    <ul aria-label={`${project.title} disciplines`}>
-                      {project.tags.map((tag) => (
-                        <li key={tag}>{tag}</li>
-                      ))}
+                    <ul aria-label={content.a11y.projectDisciplines(project.title)}>
+                      {project.tags.map((tag) => <li key={tag}>{tag}</li>)}
                     </ul>
                     <span>{project.domain}</span>
                   </div>
@@ -296,58 +330,182 @@ function SelectedWork() {
   );
 }
 
-function Toolkit() {
+function Services() {
+  const { content } = useLocale();
+
   return (
-    <section className="toolkit shell" aria-labelledby="toolkit-title">
-      <div className="section-heading section-heading--centered">
-        <h2 id="toolkit-title">One thought, carried through</h2>
-        <p>OSIRIS brings the right disciplines together without turning the work into a relay race.</p>
-      </div>
-      <ul>
-        {content.toolkit.map((item, index) => (
-          <li key={item}>
-            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-            {item}
-          </li>
+    <section className="services-section shell" id="services" aria-labelledby="services-title">
+      <SectionHeading id="services-title" title={content.services.title} intro={content.services.intro} />
+      <div className="service-ledger">
+        {content.services.items.map((service, index) => (
+          <article className="service-row" key={service.id}>
+            <span className="service-row__index" aria-hidden="true">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <h3>{service.title}</h3>
+            <p>{service.summary}</p>
+            <ul>
+              {service.deliverables.map((deliverable) => <li key={deliverable}>{deliverable}</li>)}
+            </ul>
+          </article>
         ))}
-      </ul>
-    </section>
-  );
-}
-
-function Principle() {
-  return (
-    <section className="principle shell section-gap" aria-labelledby="principle-title">
-      <div>
-        <h2 id="principle-title">{content.principle.title}</h2>
-        <ArrowDownRight size={30} aria-hidden="true" />
       </div>
-      <blockquote>
-        <p>“{content.principle.quote}”</p>
-        <footer>{content.principle.attribution}</footer>
-      </blockquote>
     </section>
   );
 }
 
-const requiredFields = ["name", "email", "service", "timeline", "brief"];
+function Studio() {
+  const { content } = useLocale();
 
-function validateField(name, value) {
+  return (
+    <section className="studio-section" id="studio" aria-labelledby="studio-title">
+      <div className="studio-grid shell">
+        <figure className="studio-portrait">
+          <img
+            src={studioPortrait}
+            width="1024"
+            height="1536"
+            alt={content.a11y.portrait}
+            loading="lazy"
+          />
+          <figcaption>{content.studio.note}</figcaption>
+        </figure>
+        <div className="studio-copy">
+          <h2 id="studio-title">{content.studio.title}</h2>
+          <p className="studio-copy__lead">{content.studio.lead}</p>
+          <p>{content.studio.copy}</p>
+          <div className="capabilities">
+            <h3>{content.studio.capabilitiesTitle}</h3>
+            <ul>
+              {content.studio.capabilities.map((capability, index) => (
+                <li key={capability}>
+                  <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                  {capability}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <blockquote>
+            <p>“{content.studio.principle}”</p>
+            <footer>{content.studio.attribution}</footer>
+          </blockquote>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Insights() {
+  const { content } = useLocale();
+  const [openInsight, setOpenInsight] = useState(null);
+
+  return (
+    <section className="insights-section shell" id="insights" aria-labelledby="insights-title">
+      <SectionHeading id="insights-title" title={content.insights.title} intro={content.insights.intro} />
+      <div className="insight-ledger">
+        {content.insights.items.map((insight) => {
+          const isOpen = openInsight === insight.id;
+          const panelId = `insight-${insight.id}`;
+          return (
+            <article className="insight-row" key={insight.id}>
+              <div className="insight-row__meta">
+                <span>{insight.date}</span>
+                <span>{insight.category}</span>
+              </div>
+              <h3>{insight.title}</h3>
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                onClick={() => setOpenInsight(isOpen ? null : insight.id)}
+              >
+                {isOpen ? content.a11y.closeNote : content.a11y.readNote}
+                {isOpen ? <Minus size={17} aria-hidden="true" /> : <Plus size={17} aria-hidden="true" />}
+              </button>
+              <div
+                className={`insight-row__excerpt${isOpen ? " is-open" : ""}`}
+                id={panelId}
+                hidden={!isOpen}
+              >
+                <p>{insight.excerpt}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function Accordion({ items, openId, onToggle }) {
+  return (
+    <div className="accordion">
+      {items.map((item) => {
+        const isOpen = item.id === openId;
+        const panelId = `faq-${item.id}-panel`;
+        const buttonId = `faq-${item.id}-button`;
+        return (
+          <article className="accordion__item" key={item.id}>
+            <h3>
+              <button
+                id={buttonId}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                onClick={() => onToggle(isOpen ? null : item.id)}
+              >
+                <span>{item.question}</span>
+                {isOpen ? <Minus size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
+              </button>
+            </h3>
+            <div
+              className={`accordion__panel${isOpen ? " is-open" : ""}`}
+              id={panelId}
+              role="region"
+              aria-labelledby={buttonId}
+              hidden={!isOpen}
+            >
+              <p>{item.answer}</p>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function FAQ() {
+  const { content } = useLocale();
+  const [openFaq, setOpenFaq] = useState(content.faq.items[0].id);
+
+  return (
+    <section className="faq-section shell" aria-labelledby="faq-title">
+      <SectionHeading id="faq-title" title={content.faq.title} intro={content.faq.intro} />
+      <Accordion items={content.faq.items} openId={openFaq} onToggle={setOpenFaq} />
+    </section>
+  );
+}
+
+function validateField(name, value, messages) {
   const trimmed = value.trim();
-  if (name === "name" && trimmed.length < 2) return "Add the name we should use in our reply.";
-  if (name === "email" && !/^\S+@\S+\.\S+$/.test(trimmed)) return "Add a complete email address, such as name@studio.com.";
-  if (name === "service" && !trimmed) return "Choose the discipline closest to your project.";
-  if (name === "timeline" && !trimmed) return "Choose the timing that best describes the project.";
-  if (name === "brief" && trimmed.length < 20) return "Share at least 20 characters so we understand what needs to change.";
+  if (name === "name" && trimmed.length < 2) return messages.name;
+  if (name === "email" && !/^\S+@\S+\.\S+$/.test(trimmed)) return messages.email;
+  if (name === "service" && !trimmed) return messages.service;
+  if (name === "timeline" && !trimmed) return messages.timeline;
+  if (name === "brief" && trimmed.length < 20) return messages.brief;
   return "";
 }
 
 function Field({ label, name, error, touched, optional = false, children, ...props }) {
+  const { content } = useLocale();
   const helperId = `${name}-helper`;
+  const stateLabel = optional ? content.contact.form.optional : content.contact.form.required;
+
   return (
     <label className={`field${error ? " field--error" : ""}`} htmlFor={name}>
       <span className="field__label">
-        {label} {optional ? <small>Optional</small> : <small>Required</small>}
+        <span>{label}</span>
+        <small>{stateLabel}</small>
       </span>
       {children || (
         <input
@@ -360,220 +518,182 @@ function Field({ label, name, error, touched, optional = false, children, ...pro
         />
       )}
       <span className="field__helper" id={helperId} aria-live="polite">
-        {touched && error ? error : " "}
+        {touched && error ? (
+          <>
+            <strong aria-hidden="true">!</strong>
+            {error}
+          </>
+        ) : " "}
       </span>
     </label>
   );
 }
 
 function ContactForm() {
-  const initialForm = {
-    name: "",
-    email: "",
-    company: "",
-    service: "",
-    budget: "",
-    timeline: "",
-    brief: "",
-  };
+  const { content } = useLocale();
   const [form, setForm] = useState(initialForm);
   const [touched, setTouched] = useState({});
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState("idle");
-  const timerRef = useRef(null);
-
-  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  const [draftUri, setDraftUri] = useState("");
+  const formCopy = content.contact.form;
 
   const updateField = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+    setStatus("idle");
+    setDraftUri("");
     if (touched[name]) {
-      setErrors((current) => ({ ...current, [name]: validateField(name, value) }));
+      setErrors((current) => ({
+        ...current,
+        [name]: validateField(name, value, formCopy.validation),
+      }));
     }
   };
 
   const blurField = (event) => {
     const { name, value } = event.target;
     setTouched((current) => ({ ...current, [name]: true }));
-    setErrors((current) => ({ ...current, [name]: validateField(name, value) }));
+    setErrors((current) => ({
+      ...current,
+      [name]: validateField(name, value, formCopy.validation),
+    }));
   };
 
   const submitForm = (event) => {
     event.preventDefault();
-    const nextErrors = Object.fromEntries(requiredFields.map((name) => [name, validateField(name, form[name])]));
-    const hasErrors = Object.values(nextErrors).some(Boolean);
+    const nextErrors = Object.fromEntries(
+      requiredFields.map((name) => [name, validateField(name, form[name], formCopy.validation)]),
+    );
+    const firstError = requiredFields.find((name) => nextErrors[name]);
+
     setTouched(Object.fromEntries(requiredFields.map((name) => [name, true])));
     setErrors(nextErrors);
 
-    if (hasErrors) {
-      const firstError = requiredFields.find((name) => nextErrors[name]);
+    if (firstError) {
+      setStatus("error");
       document.getElementById(firstError)?.focus();
       return;
     }
 
-    setStatus("loading");
-    timerRef.current = window.setTimeout(() => setStatus("success"), 550);
+    const uri = buildMailtoUri(form, content);
+    setDraftUri(uri);
+    setStatus("success");
+    launchMailto(uri);
   };
-
-  if (status === "success") {
-    return (
-      <div className="form-success" role="status" aria-live="polite">
-        <span><Check size={24} aria-hidden="true" /></span>
-        <h3>Your brief is ready.</h3>
-        <p>This is a front-end demonstration, so nothing was sent or stored.</p>
-        <button
-          className="button button--outline"
-          type="button"
-          onClick={() => {
-            setForm(initialForm);
-            setTouched({});
-            setErrors({});
-            setStatus("idle");
-          }}
-        >
-          Start another inquiry
-        </button>
-      </div>
-    );
-  }
 
   return (
     <form className="contact-form" noValidate onSubmit={submitForm}>
       <div className="form-grid">
-        <Field label="Your name" name="name" value={form.name} onChange={updateField} onBlur={blurField} error={errors.name} touched={touched.name} autoComplete="name" />
-        <Field label="Email address" name="email" value={form.email} onChange={updateField} onBlur={blurField} error={errors.email} touched={touched.email} autoComplete="email" inputMode="email" />
-        <Field label="Company or team" name="company" value={form.company} onChange={updateField} onBlur={blurField} error={errors.company} touched={touched.company} optional autoComplete="organization" />
-        <Field label="Primary need" name="service" error={errors.service} touched={touched.service}>
+        <Field label={formCopy.labels.name} name="name" value={form.name} onChange={updateField} onBlur={blurField} error={errors.name} touched={touched.name} autoComplete="name" />
+        <Field label={formCopy.labels.email} name="email" value={form.email} onChange={updateField} onBlur={blurField} error={errors.email} touched={touched.email} autoComplete="email" inputMode="email" />
+        <Field label={formCopy.labels.company} name="company" value={form.company} onChange={updateField} onBlur={blurField} error={errors.company} touched={touched.company} optional autoComplete="organization" />
+        <Field label={formCopy.labels.service} name="service" error={errors.service} touched={touched.service}>
           <select id="service" name="service" value={form.service} onChange={updateField} onBlur={blurField} aria-required="true" aria-invalid={Boolean(errors.service)} aria-describedby="service-helper">
-            <option value="">Choose one</option>
-            {content.contact.services.map((option) => <option key={option}>{option}</option>)}
+            <option value="">{formCopy.choose}</option>
+            {FORM_OPTIONS.services.map((value) => <option value={value} key={value}>{formCopy.options.services[value]}</option>)}
           </select>
         </Field>
-        <Field label="Working budget" name="budget" error={errors.budget} touched={touched.budget} optional>
+        <Field label={formCopy.labels.budget} name="budget" error={errors.budget} touched={touched.budget} optional>
           <select id="budget" name="budget" value={form.budget} onChange={updateField} onBlur={blurField} aria-describedby="budget-helper">
-            <option value="">Choose one</option>
-            {content.contact.budgets.map((option) => <option key={option}>{option}</option>)}
+            <option value="">{formCopy.choose}</option>
+            {FORM_OPTIONS.budgets.map((value) => <option value={value} key={value}>{formCopy.options.budgets[value]}</option>)}
           </select>
         </Field>
-        <Field label="Ideal timing" name="timeline" error={errors.timeline} touched={touched.timeline}>
+        <Field label={formCopy.labels.timeline} name="timeline" error={errors.timeline} touched={touched.timeline}>
           <select id="timeline" name="timeline" value={form.timeline} onChange={updateField} onBlur={blurField} aria-required="true" aria-invalid={Boolean(errors.timeline)} aria-describedby="timeline-helper">
-            <option value="">Choose one</option>
-            {content.contact.timelines.map((option) => <option key={option}>{option}</option>)}
+            <option value="">{formCopy.choose}</option>
+            {FORM_OPTIONS.timelines.map((value) => <option value={value} key={value}>{formCopy.options.timelines[value]}</option>)}
           </select>
         </Field>
       </div>
-      <Field label="Project brief" name="brief" error={errors.brief} touched={touched.brief}>
-        <textarea id="brief" name="brief" value={form.brief} onChange={updateField} onBlur={blurField} aria-required="true" aria-invalid={Boolean(errors.brief)} aria-describedby="brief-helper" placeholder="What needs to change, and why now?" />
+      <Field label={formCopy.labels.brief} name="brief" error={errors.brief} touched={touched.brief}>
+        <textarea id="brief" name="brief" value={form.brief} onChange={updateField} onBlur={blurField} aria-required="true" aria-invalid={Boolean(errors.brief)} aria-describedby="brief-helper" placeholder={formCopy.placeholder} />
       </Field>
-      <button className="button button--accent" type="submit" disabled={status === "loading"} data-state={status}>
-        {status === "loading" ? "Preparing brief…" : "Prepare inquiry"}
-        {status !== "loading" && <ArrowUpRight size={17} aria-hidden="true" />}
-      </button>
+      <div className="form-actions">
+        <button className="submit-button" type="submit" data-state={status}>
+          {formCopy.submit}
+          <ArrowUpRight size={18} aria-hidden="true" />
+        </button>
+        <p className="form-status" role="status" aria-live="polite">
+          {status === "success" ? formCopy.prepared : ""}
+        </p>
+        {draftUri && <a className="draft-fallback" href={draftUri}>{formCopy.fallback}</a>}
+      </div>
     </form>
   );
 }
 
 function Contact() {
+  const { content } = useLocale();
+
   return (
-    <section className="contact-wrap" id="contact" aria-labelledby="contact-title">
-      <div className="contact shell">
-        <div className="contact__copy">
+    <section className="contact-section" id="contact" aria-labelledby="contact-title">
+      <div className="contact-grid shell">
+        <div className="contact-copy">
           <h2 id="contact-title">{content.contact.title}</h2>
           <p>{content.contact.copy}</p>
-          <div className="contact__signal" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
+          <p className="contact-copy__direct">
+            {content.contact.directEmail}
+            <a href={`mailto:${INQUIRY_EMAIL}`}>{INQUIRY_EMAIL}</a>
+          </p>
         </div>
-        <ContactForm />
-      </div>
-    </section>
-  );
-}
-
-function FAQ() {
-  const [openFaq, setOpenFaq] = useState(content.faqs[0].id);
-  return (
-    <section className="faq shell section-gap" aria-labelledby="faq-title">
-      <div className="section-heading section-heading--centered">
-        <h2 id="faq-title">Your questions, answered.</h2>
-        <p>The practical details before a first conversation.</p>
-      </div>
-      <Accordion items={content.faqs} openId={openFaq} onToggle={setOpenFaq} variant="faq" />
-    </section>
-  );
-}
-
-function Insights() {
-  const [openInsight, setOpenInsight] = useState(null);
-  return (
-    <section className="insights shell section-gap" id="insights" aria-labelledby="insights-title">
-      <div className="section-heading">
-        <h2 id="insights-title">Read our thinking</h2>
-        <p>Short field notes on making brands and digital products more recognizable.</p>
-      </div>
-      <div className="insight-grid">
-        {content.insights.map((insight) => {
-          const isOpen = openInsight === insight.id;
-          return (
-            <article className="insight-card" key={insight.id}>
-              <div className="insight-card__meta">
-                <span>{insight.category}</span>
-                <span>{insight.date}</span>
-              </div>
-              <h3>{insight.title}</h3>
-              <div className={`insight-card__excerpt${isOpen ? " is-open" : ""}`} aria-hidden={!isOpen}>
-                <p>{insight.excerpt}</p>
-              </div>
-              <button type="button" aria-expanded={isOpen} onClick={() => setOpenInsight(isOpen ? null : insight.id)}>
-                {isOpen ? "Close note" : "Read note"}
-                {isOpen ? <Minus size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
-              </button>
-            </article>
-          );
-        })}
+        <div>
+          <ContactForm />
+          <p className="contact-privacy">{content.contact.privacy}</p>
+        </div>
       </div>
     </section>
   );
 }
 
 function Footer() {
+  const { content } = useLocale();
+  const footerLinks = [content.navigation[0], content.navigation[2], content.navigation[4]];
+
   return (
     <footer className="site-footer shell">
-      <a className="footer-email" href="#contact">
-        <span>Start an inquiry</span>
-        {content.brand.contactLabel}
-        <ArrowUpRight size={22} aria-hidden="true" />
-      </a>
-      <p className="site-footer__statement">{content.footer.statement}</p>
-      <div className="site-footer__meta">
+      <div className="site-footer__brand">
         <Wordmark />
-        <span>{content.footer.location}</span>
+        <p>{content.footer.statement}</p>
+      </div>
+      <nav aria-label={content.a11y.primaryNavigation}>
+        {footerLinks.map((item) => <a href={item.href} key={item.href}>{item.label}</a>)}
+      </nav>
+      <div className="site-footer__meta">
+        <span>{content.footer.meta}</span>
+        <a href={`mailto:${INQUIRY_EMAIL}`}>{INQUIRY_EMAIL}</a>
         <span>© {new Date().getFullYear()} OSIRIS</span>
       </div>
-      <span className="site-footer__ghost" aria-hidden="true">OSIRIS</span>
     </footer>
+  );
+}
+
+function Site() {
+  const { content } = useLocale();
+
+  return (
+    <div className="site-frame">
+      <a className="skip-link" href="#main">{content.a11y.skip}</a>
+      <Header />
+      <main id="main">
+        <Hero />
+        <SelectedWork />
+        <Services />
+        <Studio />
+        <Insights />
+        <FAQ />
+        <Contact />
+      </main>
+      <Footer />
+    </div>
   );
 }
 
 export default function App() {
   return (
-    <div className="site-frame">
-      <a className="skip-link" href="#main">Skip to content</a>
-      <Header />
-      <main id="main">
-        <Hero />
-        <StudioIntro />
-        <Services />
-        <SelectedWork />
-        <Toolkit />
-        <Principle />
-        <Contact />
-        <FAQ />
-        <Insights />
-      </main>
-      <Footer />
-    </div>
+    <LocaleProvider>
+      <Site />
+    </LocaleProvider>
   );
 }

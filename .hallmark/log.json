@@ -1,16 +1,31 @@
 [
   {
+    "date": "2026-09-13",
+    "macrostructure": "Manifesto",
+    "theme": "custom",
+    "theme_axes": "dark / display-heavy / chromatic-phosphor",
+    "vibe": "controlled brutal, phosphor signal, exact",
+    "enrichment": "none · typography-led manifesto",
+    "nav": "N6 Newspaper masthead",
+    "footer": "Ft1 Mast-headed",
+    "brief": "OSIRIS · bilingual Croatian/English studio portfolio",
+    "variation": "Replaced the prior Split Studio composition with a manifesto-first editorial sequence, a 12-column work mosaic, specification rows, a ruled insights ledger, and masthead chrome",
+    "verification": "Production build, eight interaction and locale tests, responsive browser inspection at 320/375/414/768/1280/1920 px, WCAG contrast pairs, and Hallmark 58-gate audit passed",
+    "lastAudit": "2026-09-13"
+  },
+  {
     "date": "2026-09-11",
     "macrostructure": "Split Studio",
     "theme": "custom",
     "theme_axes": "dark / geometric-sans / chromatic-phosphor",
     "vibe": "nocturnal precision, sculptural, controlled",
-    "enrichment": "E8 tightly-cropped generated original",
+    "enrichment": "none · content-derived selected-work ledger",
     "nav": "N9 Edge-aligned minimal",
     "footer": "Ft5 Statement",
     "brief": "OSIRIS · creative studio portfolio",
     "reference": "User-provided 640×4479 screenshot",
-    "visualIteration": "Compressed the 640px page from 8785px to approximately 5300px while preserving the full brief; corrected mobile overflow and tightened insight wrapping",
-    "verification": "Production build, three interaction tests, responsive browser inspection, WCAG contrast pairs, and Hallmark 58-gate audit passed"
+    "visualIteration": "Removed the generic generated hero bust, replaced it with a live-work ledger, separated mobile proof from copy, reduced mono to two slots, consolidated derived colours into tokens, simplified the footer CTA, and removed layout-property transitions",
+    "verification": "Production build, four interaction tests, responsive browser inspection at 320/375/414/768/1280/1920 px, WCAG contrast pairs, and Hallmark 58-gate audit passed",
+    "lastAudit": "2026-09-13"
   }
 ]
